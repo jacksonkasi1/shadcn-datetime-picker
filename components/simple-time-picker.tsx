@@ -10,7 +10,6 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   format,
-  parse,
   setHours,
   startOfHour,
   endOfHour,
@@ -29,6 +28,13 @@ interface SimpleTimeOption {
   value: number;
   label: string;
   disabled?: boolean;
+}
+
+interface TimeParts {
+  hour: number;
+  minute: number;
+  second: number;
+  ampm: number;
 }
 
 const AM_VALUE = 0;
@@ -56,7 +62,7 @@ export function SimpleTimePicker({
   placeholder = 'Select time',
 }: {
   use12HourFormat?: boolean;
-  value: Date;
+  value?: Date;
   onChange: (date: Date) => void;
   min?: Date;
   max?: Date;
@@ -67,38 +73,74 @@ export function SimpleTimePicker({
   placeholder?: string;
   modal?: boolean;
 }) {
-  // hours24h = HH
-  // hours12h = hh
-  const formatStr = useMemo(
-    () => (use12HourFormat ? 'yyyy-MM-dd hh:mm:ss.SSS a xxxx' : 'yyyy-MM-dd HH:mm:ss.SSS xxxx'),
-    [use12HourFormat]
+  const fallbackDateRef = useRef<Date>(value ?? new Date());
+  const selectedDate = value ?? fallbackDateRef.current;
+
+  useEffect(() => {
+    if (value) fallbackDateRef.current = value;
+  }, [value]);
+
+  const initialParts = useMemo(() => getTimeParts(selectedDate, use12HourFormat, showSeconds), []);
+
+  const [ampm, setAmpm] = useState(initialParts.ampm);
+  const [hour, setHour] = useState(initialParts.hour);
+  const [minute, setMinute] = useState(initialParts.minute);
+  const [second, setSecond] = useState(initialParts.second);
+  const [open, setOpen] = useState(false);
+
+  const hourRef = useRef<HTMLDivElement>(null);
+  const minuteRef = useRef<HTMLDivElement>(null);
+  const secondRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const nextParts = getTimeParts(selectedDate, use12HourFormat, showSeconds);
+    setAmpm(nextParts.ampm);
+    setHour(nextParts.hour);
+    setMinute(nextParts.minute);
+    setSecond(nextParts.second);
+  }, [selectedDate, use12HourFormat, showSeconds]);
+
+  const _hourIn24h = useMemo(() => to24Hour(hour, ampm, use12HourFormat), [hour, use12HourFormat, ampm]);
+
+  const commitTime = useCallback(
+    (nextParts: Partial<TimeParts>) => {
+      const timeParts = {
+        hour,
+        minute,
+        second: showSeconds ? second : 0,
+        ampm,
+        ...nextParts,
+      };
+
+      const nextDate = clampDate(
+        buildTime({
+          value: selectedDate,
+          use12HourFormat,
+          hour: timeParts.hour,
+          minute: timeParts.minute,
+          second: showSeconds ? timeParts.second : 0,
+          ampm: timeParts.ampm,
+        }),
+        min,
+        max
+      );
+
+      const committedParts = getTimeParts(nextDate, use12HourFormat, showSeconds);
+      setAmpm(committedParts.ampm);
+      setHour(committedParts.hour);
+      setMinute(committedParts.minute);
+      setSecond(committedParts.second);
+      onChange(nextDate);
+    },
+    [hour, minute, second, ampm, selectedDate, use12HourFormat, showSeconds, min, max, onChange]
   );
-  const [ampm, setAmpm] = useState(format(value, 'a') === 'AM' ? AM_VALUE : PM_VALUE);
-  const [hour, setHour] = useState(use12HourFormat ? +format(value, 'hh') : value.getHours());
-  const [minute, setMinute] = useState(value.getMinutes());
-  const [second, setSecond] = useState(value.getSeconds());
-
-  useEffect(() => {
-    setAmpm(format(value, 'a') === 'AM' ? AM_VALUE : PM_VALUE);
-    setHour(use12HourFormat ? +format(value, 'hh') : value.getHours());
-    setMinute(value.getMinutes());
-    setSecond(showSeconds ? value.getSeconds() : 0);
-  }, [value, use12HourFormat, showSeconds]);
-
-  useEffect(() => {
-    onChange(buildTime({ use12HourFormat, value, formatStr, hour, minute, second: showSeconds ? second : 0, ampm }));
-  }, [hour, minute, second, ampm, formatStr, use12HourFormat, showSeconds]);
-
-  const _hourIn24h = useMemo(() => {
-    return use12HourFormat ? (hour % 12) + ampm * 12 : hour;
-  }, [hour, use12HourFormat, ampm]);
 
   const hours: SimpleTimeOption[] = useMemo(
     () =>
       Array.from({ length: use12HourFormat ? 12 : 24 }, (_, i) => {
         let disabled = false;
         const hourValue = use12HourFormat ? (i === 0 ? 12 : i) : i;
-        const hDate = setHours(value, use12HourFormat ? i + ampm * 12 : i);
+        const hDate = setHours(selectedDate, use12HourFormat ? i + ampm * 12 : i);
         const hStart = startOfHour(hDate);
         const hEnd = endOfHour(hDate);
         if (min && hEnd < min) disabled = true;
@@ -109,10 +151,11 @@ export function SimpleTimePicker({
           disabled,
         };
       }),
-    [value, min, max, use12HourFormat, ampm]
+    [selectedDate, min, max, use12HourFormat, ampm]
   );
+
   const minutes: SimpleTimeOption[] = useMemo(() => {
-    const anchorDate = setHours(value, _hourIn24h);
+    const anchorDate = setHours(selectedDate, _hourIn24h);
     return Array.from({ length: 60 }, (_, i) => {
       let disabled = false;
       const mDate = setMinutes(anchorDate, i);
@@ -126,9 +169,10 @@ export function SimpleTimePicker({
         disabled,
       };
     });
-  }, [value, min, max, _hourIn24h]);
+  }, [selectedDate, min, max, _hourIn24h]);
+
   const seconds: SimpleTimeOption[] = useMemo(() => {
-    const anchorDate = setMilliseconds(setMinutes(setHours(value, _hourIn24h), minute), 0);
+    const anchorDate = setMilliseconds(setMinutes(setHours(selectedDate, _hourIn24h), minute), 0);
     const _min = min ? setMilliseconds(min, 0) : undefined;
     const _max = max ? setMilliseconds(max, 0) : undefined;
     return Array.from({ length: 60 }, (_, i) => {
@@ -142,10 +186,11 @@ export function SimpleTimePicker({
         disabled,
       };
     });
-  }, [value, minute, min, max, _hourIn24h]);
+  }, [selectedDate, minute, min, max, _hourIn24h]);
+
   const ampmOptions = useMemo(() => {
-    const startD = startOfDay(value);
-    const endD = endOfDay(value);
+    const startD = startOfDay(selectedDate);
+    const endD = endOfDay(selectedDate);
     return [
       { value: AM_VALUE, label: 'AM' },
       { value: PM_VALUE, label: 'PM' },
@@ -157,13 +202,7 @@ export function SimpleTimePicker({
       if (max && start > max) disabled = true;
       return { ...v, disabled };
     });
-  }, [value, min, max]);
-
-  const [open, setOpen] = useState(false);
-
-  const hourRef = useRef<HTMLDivElement>(null);
-  const minuteRef = useRef<HTMLDivElement>(null);
-  const secondRef = useRef<HTMLDivElement>(null);
+  }, [selectedDate, min, max]);
 
   useEffect(() => {
     const timeoutId = setTimeout(() => {
@@ -176,89 +215,26 @@ export function SimpleTimePicker({
     return () => clearTimeout(timeoutId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
-  const onHourChange = useCallback(
-    (v: SimpleTimeOption) => {
-      if (min) {
-        let newTime = buildTime({ use12HourFormat, value, formatStr, hour: v.value, minute, second, ampm });
-        if (newTime < min) {
-          setMinute(min.getMinutes());
-          setSecond(showSeconds ? min.getSeconds() : 0);
-        }
-      }
-      if (max) {
-        let newTime = buildTime({ use12HourFormat, value, formatStr, hour: v.value, minute, second, ampm });
-        if (newTime > max) {
-          setMinute(max.getMinutes());
-          setSecond(showSeconds ? max.getSeconds() : 0);
-        }
-      }
-      setHour(v.value);
-    },
-    [use12HourFormat, value, formatStr, minute, second, ampm, min, max, showSeconds]
-  );
-
-  const onMinuteChange = useCallback(
-    (v: SimpleTimeOption) => {
-      if (min) {
-        let newTime = buildTime({ use12HourFormat, value, formatStr, hour, minute: v.value, second, ampm });
-        if (newTime < min) {
-          setSecond(showSeconds ? min.getSeconds() : 0);
-        }
-      }
-      if (max) {
-        let newTime = buildTime({ use12HourFormat, value, formatStr, hour, minute: v.value, second, ampm });
-        if (newTime > max) {
-          setSecond(showSeconds ? max.getSeconds() : 0);
-        }
-      }
-      setMinute(v.value);
-    },
-    [use12HourFormat, value, formatStr, hour, second, ampm, min, max, showSeconds]
-  );
-
-  const onAmpmChange = useCallback(
-    (v: SimpleTimeOption) => {
-      if (min) {
-        let newTime = buildTime({ use12HourFormat, value, formatStr, hour, minute, second, ampm: v.value });
-        if (newTime < min) {
-          const minH = min.getHours() % 12;
-          setHour(minH === 0 ? 12 : minH);
-          setMinute(min.getMinutes());
-          setSecond(showSeconds ? min.getSeconds() : 0);
-        }
-      }
-      if (max) {
-        let newTime = buildTime({ use12HourFormat, value, formatStr, hour, minute, second, ampm: v.value });
-        if (newTime > max) {
-          const maxH = max.getHours() % 12;
-          setHour(maxH === 0 ? 12 : maxH);
-          setMinute(max.getMinutes());
-          setSecond(showSeconds ? max.getSeconds() : 0);
-        }
-      }
-      setAmpm(v.value);
-    },
-    [use12HourFormat, value, formatStr, hour, minute, second, min, max, showSeconds]
-  );
 
   const onNowClick = useCallback(() => {
     const now = new Date();
-    const next = new Date(value);
+    const next = new Date(selectedDate);
     next.setHours(now.getHours(), now.getMinutes(), showSeconds ? now.getSeconds() : 0, 0);
 
-    const clamped = min && next < min ? min : max && next > max ? max : next;
-    setAmpm(format(clamped, 'a') === 'AM' ? AM_VALUE : PM_VALUE);
-    setHour(use12HourFormat ? +format(clamped, 'hh') : clamped.getHours());
-    setMinute(clamped.getMinutes());
-    setSecond(showSeconds ? clamped.getSeconds() : 0);
-  }, [value, min, max, showSeconds, use12HourFormat]);
+    const clamped = clampDate(next, min, max);
+    const nextParts = getTimeParts(clamped, use12HourFormat, showSeconds);
+    setAmpm(nextParts.ampm);
+    setHour(nextParts.hour);
+    setMinute(nextParts.minute);
+    setSecond(nextParts.second);
+    onChange(clamped);
+  }, [selectedDate, min, max, showSeconds, use12HourFormat, onChange]);
 
   const display = useMemo(() => {
-    return format(
-      value,
-      use12HourFormat ? (showSeconds ? 'hh:mm:ss a' : 'hh:mm a') : showSeconds ? 'HH:mm:ss' : 'HH:mm'
-    );
-  }, [value, use12HourFormat, showSeconds]);
+    return value
+      ? format(value, use12HourFormat ? (showSeconds ? 'hh:mm:ss a' : 'hh:mm a') : showSeconds ? 'HH:mm:ss' : 'HH:mm')
+      : placeholder;
+  }, [value, use12HourFormat, showSeconds, placeholder]);
 
   const contentWidthClass = use12HourFormat
     ? showSeconds
@@ -282,7 +258,7 @@ export function SimpleTimePicker({
             className
           )}
         >
-          <span className={cn('truncate tabular-nums', !value && 'text-muted-foreground')}>{value ? display : placeholder}</span>
+          <span className={cn('truncate tabular-nums', !value && 'text-muted-foreground')}>{display}</span>
           <Clock className="ml-3 size-4 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground" />
         </button>
       </PopoverTrigger>
@@ -293,12 +269,12 @@ export function SimpleTimePicker({
         className={cn('overflow-hidden rounded-xl border bg-popover p-0 shadow-lg', contentWidthClass, contentClassName)}
       >
         <div className="flex h-56 border-b bg-popover">
-          <TimeColumn options={hours} selectedValue={hour} selectedRef={hourRef} onSelect={onHourChange} />
-          <TimeColumn options={minutes} selectedValue={minute} selectedRef={minuteRef} onSelect={onMinuteChange} />
+          <TimeColumn options={hours} selectedValue={hour} selectedRef={hourRef} onSelect={(v) => commitTime({ hour: v.value })} />
+          <TimeColumn options={minutes} selectedValue={minute} selectedRef={minuteRef} onSelect={(v) => commitTime({ minute: v.value })} />
           {showSeconds && (
-            <TimeColumn options={seconds} selectedValue={second} selectedRef={secondRef} onSelect={(v) => setSecond(v.value)} />
+            <TimeColumn options={seconds} selectedValue={second} selectedRef={secondRef} onSelect={(v) => commitTime({ second: v.value })} />
           )}
-          {use12HourFormat && <TimeColumn options={ampmOptions} selectedValue={ampm} onSelect={onAmpmChange} />}
+          {use12HourFormat && <TimeColumn options={ampmOptions} selectedValue={ampm} onSelect={(v) => commitTime({ ampm: v.value })} />}
         </div>
 
         <div className="flex h-12 items-center justify-between bg-popover px-3">
@@ -370,30 +346,39 @@ const TimeItem = ({
   );
 };
 
-interface BuildTimeOptions {
-  use12HourFormat?: boolean;
+function getTimeParts(date: Date, use12HourFormat?: boolean, showSeconds = true): TimeParts {
+  return {
+    ampm: format(date, 'a') === 'AM' ? AM_VALUE : PM_VALUE,
+    hour: use12HourFormat ? +format(date, 'hh') : date.getHours(),
+    minute: date.getMinutes(),
+    second: showSeconds ? date.getSeconds() : 0,
+  };
+}
+
+function to24Hour(hour: number, ampm: number, use12HourFormat?: boolean) {
+  return use12HourFormat ? (hour % 12) + ampm * 12 : hour;
+}
+
+function buildTime({
+  value,
+  use12HourFormat,
+  hour,
+  minute,
+  second,
+  ampm,
+}: {
   value: Date;
-  formatStr: string;
+  use12HourFormat?: boolean;
   hour: number;
   minute: number;
   second: number;
   ampm: number;
+}) {
+  return setHours(setMinutes(setSeconds(setMilliseconds(value, 0), second), minute), to24Hour(hour, ampm, use12HourFormat));
 }
 
-function buildTime(options: BuildTimeOptions) {
-  const { use12HourFormat, value, formatStr, hour, minute, second, ampm } = options;
-  let date: Date;
-  if (use12HourFormat) {
-    const dateStrRaw = format(value, formatStr);
-    // yyyy-MM-dd hh:mm:ss.SSS a zzzz
-    // 2024-10-14 01:20:07.524 AM GMT+00:00
-    let dateStr = dateStrRaw.slice(0, 11) + hour.toString().padStart(2, '0') + dateStrRaw.slice(13);
-    dateStr = dateStr.slice(0, 14) + minute.toString().padStart(2, '0') + dateStr.slice(16);
-    dateStr = dateStr.slice(0, 17) + second.toString().padStart(2, '0') + dateStr.slice(19);
-    dateStr = dateStr.slice(0, 24) + (ampm == AM_VALUE ? 'AM' : 'PM') + dateStr.slice(26);
-    date = parse(dateStr, formatStr, value);
-  } else {
-    date = setHours(setMinutes(setSeconds(setMilliseconds(value, 0), second), minute), hour);
-  }
+function clampDate(date: Date, min?: Date, max?: Date) {
+  if (min && date < min) return min;
+  if (max && date > max) return max;
   return date;
 }
