@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
-import { Clock, ChevronDownIcon, CheckIcon } from 'lucide-react';
+import { Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
@@ -26,7 +26,7 @@ import {
 } from 'date-fns';
 
 interface SimpleTimeOption {
-  value: any;
+  value: number;
   label: string;
   disabled?: boolean;
 }
@@ -50,6 +50,10 @@ export function SimpleTimePicker({
   max,
   disabled,
   modal,
+  className,
+  contentClassName,
+  showSeconds = true,
+  placeholder = 'Select time',
 }: {
   use12HourFormat?: boolean;
   value: Date;
@@ -58,6 +62,9 @@ export function SimpleTimePicker({
   max?: Date;
   disabled?: boolean;
   className?: string;
+  contentClassName?: string;
+  showSeconds?: boolean;
+  placeholder?: string;
   modal?: boolean;
 }) {
   // hours24h = HH
@@ -72,8 +79,15 @@ export function SimpleTimePicker({
   const [second, setSecond] = useState(value.getSeconds());
 
   useEffect(() => {
-    onChange(buildTime({ use12HourFormat, value, formatStr, hour, minute, second, ampm }));
-  }, [hour, minute, second, ampm, formatStr, use12HourFormat]);
+    setAmpm(format(value, 'a') === 'AM' ? AM_VALUE : PM_VALUE);
+    setHour(use12HourFormat ? +format(value, 'hh') : value.getHours());
+    setMinute(value.getMinutes());
+    setSecond(showSeconds ? value.getSeconds() : 0);
+  }, [value, use12HourFormat, showSeconds]);
+
+  useEffect(() => {
+    onChange(buildTime({ use12HourFormat, value, formatStr, hour, minute, second: showSeconds ? second : 0, ampm }));
+  }, [hour, minute, second, ampm, formatStr, use12HourFormat, showSeconds]);
 
   const _hourIn24h = useMemo(() => {
     return use12HourFormat ? (hour % 12) + ampm * 12 : hour;
@@ -154,9 +168,9 @@ export function SimpleTimePicker({
   useEffect(() => {
     const timeoutId = setTimeout(() => {
       if (open) {
-        hourRef.current?.scrollIntoView({ behavior: 'auto' });
-        minuteRef.current?.scrollIntoView({ behavior: 'auto' });
-        secondRef.current?.scrollIntoView({ behavior: 'auto' });
+        hourRef.current?.scrollIntoView({ behavior: 'auto', block: 'center' });
+        minuteRef.current?.scrollIntoView({ behavior: 'auto', block: 'center' });
+        secondRef.current?.scrollIntoView({ behavior: 'auto', block: 'center' });
       }
     }, 1);
     return () => clearTimeout(timeoutId);
@@ -168,38 +182,38 @@ export function SimpleTimePicker({
         let newTime = buildTime({ use12HourFormat, value, formatStr, hour: v.value, minute, second, ampm });
         if (newTime < min) {
           setMinute(min.getMinutes());
-          setSecond(min.getSeconds());
+          setSecond(showSeconds ? min.getSeconds() : 0);
         }
       }
       if (max) {
         let newTime = buildTime({ use12HourFormat, value, formatStr, hour: v.value, minute, second, ampm });
         if (newTime > max) {
           setMinute(max.getMinutes());
-          setSecond(max.getSeconds());
+          setSecond(showSeconds ? max.getSeconds() : 0);
         }
       }
       setHour(v.value);
     },
-    [setHour, use12HourFormat, value, formatStr, minute, second, ampm]
+    [use12HourFormat, value, formatStr, minute, second, ampm, min, max, showSeconds]
   );
 
   const onMinuteChange = useCallback(
     (v: SimpleTimeOption) => {
       if (min) {
-        let newTime = buildTime({ use12HourFormat, value, formatStr, hour: v.value, minute, second, ampm });
+        let newTime = buildTime({ use12HourFormat, value, formatStr, hour, minute: v.value, second, ampm });
         if (newTime < min) {
-          setSecond(min.getSeconds());
+          setSecond(showSeconds ? min.getSeconds() : 0);
         }
       }
       if (max) {
-        let newTime = buildTime({ use12HourFormat, value, formatStr, hour: v.value, minute, second, ampm });
+        let newTime = buildTime({ use12HourFormat, value, formatStr, hour, minute: v.value, second, ampm });
         if (newTime > max) {
-          setSecond(newTime.getSeconds());
+          setSecond(showSeconds ? max.getSeconds() : 0);
         }
       }
       setMinute(v.value);
     },
-    [setMinute, use12HourFormat, value, formatStr, hour, second, ampm]
+    [use12HourFormat, value, formatStr, hour, second, ampm, min, max, showSeconds]
   );
 
   const onAmpmChange = useCallback(
@@ -210,7 +224,7 @@ export function SimpleTimePicker({
           const minH = min.getHours() % 12;
           setHour(minH === 0 ? 12 : minH);
           setMinute(min.getMinutes());
-          setSecond(min.getSeconds());
+          setSecond(showSeconds ? min.getSeconds() : 0);
         }
       }
       if (max) {
@@ -219,129 +233,140 @@ export function SimpleTimePicker({
           const maxH = max.getHours() % 12;
           setHour(maxH === 0 ? 12 : maxH);
           setMinute(max.getMinutes());
-          setSecond(max.getSeconds());
+          setSecond(showSeconds ? max.getSeconds() : 0);
         }
       }
       setAmpm(v.value);
     },
-    [setAmpm, use12HourFormat, value, formatStr, hour, minute, second, min, max]
+    [use12HourFormat, value, formatStr, hour, minute, second, min, max, showSeconds]
   );
 
+  const onNowClick = useCallback(() => {
+    const now = new Date();
+    const next = new Date(value);
+    next.setHours(now.getHours(), now.getMinutes(), showSeconds ? now.getSeconds() : 0, 0);
+
+    const clamped = min && next < min ? min : max && next > max ? max : next;
+    setAmpm(format(clamped, 'a') === 'AM' ? AM_VALUE : PM_VALUE);
+    setHour(use12HourFormat ? +format(clamped, 'hh') : clamped.getHours());
+    setMinute(clamped.getMinutes());
+    setSecond(showSeconds ? clamped.getSeconds() : 0);
+  }, [value, min, max, showSeconds, use12HourFormat]);
+
   const display = useMemo(() => {
-    return format(value, use12HourFormat ? 'hh:mm:ss a' : 'HH:mm:ss');
-  }, [value, use12HourFormat]);
+    return format(
+      value,
+      use12HourFormat ? (showSeconds ? 'hh:mm:ss a' : 'hh:mm a') : showSeconds ? 'HH:mm:ss' : 'HH:mm'
+    );
+  }, [value, use12HourFormat, showSeconds]);
+
+  const contentWidthClass = use12HourFormat
+    ? showSeconds
+      ? 'w-[292px]'
+      : 'w-[232px]'
+    : showSeconds
+      ? 'w-[232px]'
+      : 'w-[172px]';
 
   return (
     <Popover open={open} onOpenChange={setOpen} modal={modal}>
       <PopoverTrigger asChild>
-        <div
+        <button
+          type="button"
           role="combobox"
           aria-expanded={open}
+          aria-disabled={disabled}
+          disabled={disabled}
           className={cn(
-            'flex h-9 px-3 items-center justify-between cursor-pointer font-normal border border-input rounded-md text-sm shadow-sm',
-            disabled && 'opacity-50 cursor-not-allowed'
+            'group flex h-10 min-w-[250px] items-center justify-between rounded-md border border-input bg-background px-3 text-left text-sm font-normal text-foreground shadow-sm transition-colors hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
+            className
           )}
-          tabIndex={0}
         >
-          <Clock className="mr-2 size-4" />
-          {display}
-          <ChevronDownIcon className="ml-2 size-4 shrink-0 opacity-50" />
-        </div>
+          <span className={cn('truncate tabular-nums', !value && 'text-muted-foreground')}>{value ? display : placeholder}</span>
+          <Clock className="ml-3 size-4 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground" />
+        </button>
       </PopoverTrigger>
-      <PopoverContent className="p-0" side="top">
-        <div className="flex-col gap-2 p-2">
-          <div className="flex h-56 grow">
-            <ScrollArea className="h-full flex-grow">
-              <div className="flex grow flex-col items-stretch overflow-y-auto pe-2 pb-48">
-                {hours.map((v) => (
-                  <div ref={v.value === hour ? hourRef : undefined} key={v.value}>
-                    <TimeItem
-                      option={v}
-                      selected={v.value === hour}
-                      onSelect={onHourChange}
-                      disabled={v.disabled}
-                      className="h-8"
-                    />
-                  </div>
-                ))}
-              </div>
-            </ScrollArea>
-            <ScrollArea className="h-full flex-grow">
-              <div className="flex grow flex-col items-stretch overflow-y-auto pe-2 pb-48">
-                {minutes.map((v) => (
-                  <div ref={v.value === minute ? minuteRef : undefined} key={v.value}>
-                    <TimeItem
-                      option={v}
-                      selected={v.value === minute}
-                      onSelect={onMinuteChange}
-                      disabled={v.disabled}
-                      className="h-8"
-                    />
-                  </div>
-                ))}
-              </div>
-            </ScrollArea>
-            <ScrollArea className="h-full flex-grow">
-              <div className="flex grow flex-col items-stretch overflow-y-auto pe-2 pb-48">
-                {seconds.map((v) => (
-                  <div ref={v.value === second ? secondRef : undefined} key={v.value}>
-                    <TimeItem
-                      option={v}
-                      selected={v.value === second}
-                      onSelect={(v) => setSecond(v.value)}
-                      className="h-8"
-                      disabled={v.disabled}
-                    />
-                  </div>
-                ))}
-              </div>
-            </ScrollArea>
-            {use12HourFormat && (
-              <ScrollArea className="h-full flex-grow">
-                <div className="flex grow flex-col items-stretch overflow-y-auto pe-2">
-                  {ampmOptions.map((v) => (
-                    <TimeItem
-                      key={v.value}
-                      option={v}
-                      selected={v.value === ampm}
-                      onSelect={onAmpmChange}
-                      className="h-8"
-                      disabled={v.disabled}
-                    />
-                  ))}
-                </div>
-              </ScrollArea>
-            )}
-          </div>
+      <PopoverContent
+        align="start"
+        side="bottom"
+        sideOffset={4}
+        className={cn('overflow-hidden rounded-xl border bg-popover p-0 shadow-lg', contentWidthClass, contentClassName)}
+      >
+        <div className="flex h-56 border-b bg-popover">
+          <TimeColumn options={hours} selectedValue={hour} selectedRef={hourRef} onSelect={onHourChange} />
+          <TimeColumn options={minutes} selectedValue={minute} selectedRef={minuteRef} onSelect={onMinuteChange} />
+          {showSeconds && (
+            <TimeColumn options={seconds} selectedValue={second} selectedRef={secondRef} onSelect={(v) => setSecond(v.value)} />
+          )}
+          {use12HourFormat && <TimeColumn options={ampmOptions} selectedValue={ampm} onSelect={onAmpmChange} />}
+        </div>
+
+        <div className="flex h-12 items-center justify-between bg-popover px-3">
+          <button
+            type="button"
+            className="rounded px-1 text-sm font-medium text-primary transition-colors hover:text-primary/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={onNowClick}
+          >
+            Now
+          </button>
+          <Button type="button" size="sm" className="h-8 px-3" onClick={() => setOpen(false)}>
+            OK
+          </Button>
         </div>
       </PopoverContent>
     </Popover>
   );
 }
 
+const TimeColumn = ({
+  options,
+  selectedValue,
+  selectedRef,
+  onSelect,
+}: {
+  options: SimpleTimeOption[];
+  selectedValue: number;
+  selectedRef?: React.RefObject<HTMLDivElement>;
+  onSelect: (option: SimpleTimeOption) => void;
+}) => {
+  return (
+    <div className="min-w-0 flex-1 border-r border-border/70 last:border-r-0">
+      <ScrollArea className="h-full [&_[data-radix-scroll-area-scrollbar]]:hidden">
+        <div className="py-1">
+          {options.map((option) => (
+            <div ref={option.value === selectedValue ? selectedRef : undefined} key={option.value}>
+              <TimeItem option={option} selected={option.value === selectedValue} onSelect={onSelect} disabled={option.disabled} />
+            </div>
+          ))}
+        </div>
+      </ScrollArea>
+    </div>
+  );
+};
+
 const TimeItem = ({
   option,
   selected,
   onSelect,
-  className,
   disabled,
 }: {
   option: SimpleTimeOption;
   selected: boolean;
   onSelect: (option: SimpleTimeOption) => void;
-  className?: string;
   disabled?: boolean;
 }) => {
   return (
-    <Button
-      variant="ghost"
-      className={cn('flex justify-center px-1 pe-2 ps-1', className)}
+    <button
+      type="button"
+      className={cn(
+        'flex h-9 w-full items-center justify-center rounded-none px-1 text-sm font-medium tabular-nums text-foreground transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:outline-none disabled:pointer-events-none disabled:opacity-35',
+        selected && 'bg-accent text-accent-foreground'
+      )}
       onClick={() => onSelect(option)}
       disabled={disabled}
     >
-      <div className="w-4">{selected && <CheckIcon className="my-auto size-4" />}</div>
-      <span className="ms-2">{option.label}</span>
-    </Button>
+      {option.label}
+    </button>
   );
 };
 
