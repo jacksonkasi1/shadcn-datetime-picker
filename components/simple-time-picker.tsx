@@ -2,7 +2,7 @@
 /** biome-ignore-all lint: third-party component */
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
 import { Clock } from 'lucide-react';
@@ -326,7 +326,7 @@ const TimeColumn = ({
 }: {
   options: SimpleTimeOption[];
   selectedValue: number;
-  selectedRef?: React.RefObject<HTMLDivElement>;
+  selectedRef?: RefObject<HTMLDivElement>;
   onSelect: (option: SimpleTimeOption) => void;
 }) => {
   return (
